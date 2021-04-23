@@ -169,19 +169,19 @@ void differentiator::generateLatex(const char* file_name) {
     fprintf(file, "\\usepackage[russian]{babel}\n");
     fprintf(file, "\\usepackage{hyperref}\n");
     fprintf(file, "\\title{\\textbf{Acram Alpha}}\n");
-    fprintf(file, "\\date{Автор: \\href{https://github.com/synthMoza}{\\textbf{synthMoza}}}\n");
-    fprintf(file, "\\author{\\emph{Дифференциирование функций}}\n");
+    fprintf(file, "\\date{РђРІС‚РѕСЂ: \\href{https://github.com/synthMoza}{\\textbf{synthMoza}}}\n");
+    fprintf(file, "\\author{\\emph{Р”РёС„С„РµСЂРµРЅС†РёРёСЂРѕРІР°РЅРёРµ РїСЂРёР»РѕР¶РµРЅРёР№}}\n");
     fprintf(file, "\\begin{document}\n");
     fprintf(file, "\\maketitle\n");
-    fprintf(file, "\\center{\\textbf{Утрем нос Стивену Вольфраму!}} \\\\ \n");
-    fprintf(file, "\\emph{Исходная функция:}\n");
+    fprintf(file, "\\center{\\textbf{РЈС‚СЂРµРј РЅРѕСЃ РЎС‚РёРІРµРЅСѓ Р’РѕР»СЊС„СЂР°РјСѓ!}} \\\\ \n");
+    fprintf(file, "\\emph{РСЃС…РѕРґРЅР°СЏ С„СѓРЅРєС†РёСЏ:}\n");
     // Original function
-    fprintf(file, "\\[");
+    fprintf(file, "\\[f(x) = ");
     expression_.latexOutput(file);
     fprintf(file, "\\]\n");
-    fprintf(file, "\\emph{Ее производная:}\n");
+    fprintf(file, "\\emph{Р•С‘ РїСЂРѕРёР·РІРѕРґРЅР°СЏ:}\n");
     // Derivated function
-    fprintf(file, "\\[");
+    fprintf(file, "\\[f'(x) = [");
     diff_expression_.latexOutput(file);
     fprintf(file, "\\]\n");
     fprintf(file, "\\end{document}\n");
