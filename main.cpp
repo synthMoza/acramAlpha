@@ -16,6 +16,7 @@ int main() {
     // Differentiate the expression
     differentiator.set_expression(input_str);
     differentiator.diff();
+    differentiator.generateLatex("output.tex");
 
     // Free resources
     free(input_str);

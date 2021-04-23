@@ -14,14 +14,15 @@ namespace se {
     // Enum class that contains all token types
     // TODO Add variables and constants
     enum class token_type {
-        TOKEN_NOPE, TOKEN_OP, TOKEN_NUM, TOKEN_COUNT
+        TOKEN_NOPE, TOKEN_OP, TOKEN_NUM, TOKEN_VAR, TOKEN_COUNT
     };
     // Struct that represents the token for expressions
     struct token {
         token_type type;
         union {
-            token_op_id op_id;
-            double value;
+            token_op_id op_id; // operation ID
+            char* var; // variable value
+            double value; // number value
         };
 
         token() : type (), value () {}
