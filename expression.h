@@ -45,9 +45,15 @@ namespace se {
         double calculate(node* nd, double value = 0);
         // LaTeX output recursive method
         void latex_print(FILE* file, node* nd);
+        // Simplify the expression
+        node* simplify(node* nd);
+
+        bool simpled_;
     public:
         expression();
 
+        // Simplify the expression
+        void simplify();
         // Build the expression tree of this vector of tokens
         void build_tree(const vector<token>& tokens);
         // Return the current expression tree
@@ -58,7 +64,7 @@ namespace se {
         // If it can not be calculated (includes a variable), set variable's value to the given argument
         double calculate(double value = 0);
         // Output this expression into the LaTeX file
-        void latexOutput(const char* file_name);
+        void latexOutput(FILE* file);
         ~expression();
     };
 };

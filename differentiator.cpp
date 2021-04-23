@@ -58,7 +58,6 @@ int differentiator::get_token_var() {
     sscanf(str_, VAR "%n", &consumed);
     if (consumed > 0) {
         tk.type = token_type::TOKEN_VAR;
-        tk.var = 0;
         goto token_consumed;
     }
     // Failed to consume this token
@@ -125,7 +124,8 @@ node* differentiator::diff_exp(node* nd) {
                 case token_op_id::OP_MUL:
                     // (fg)' = f'g + fg'
                     new_nd = node::get_node();
-                    new_nd->set_token(nd->tk);
+                    new_nd->tk.type = token_type::TOKEN_OP;
+                    new_nd->tk.op_id = token_op_id::OP_PLUS;
 
                     lnew_nd = node::get_node();
                     lnew_nd->tk.type = token_type::TOKEN_OP;
@@ -136,17 +136,15 @@ node* differentiator::diff_exp(node* nd) {
                     rnew_nd = node::get_node();
                     rnew_nd->tk.type = token_type::TOKEN_OP;
                     rnew_nd->tk.op_id = token_op_id::OP_MUL;
-                    rnew_nd->rightChild_ = diff_exp(nd->rightChild_);
                     rnew_nd->leftChild_ = nd->leftChild_->copy();
+                    rnew_nd->rightChild_ = diff_exp(nd->rightChild_);
 
                     new_nd->leftChild_ = lnew_nd;
                     new_nd->rightChild_ = rnew_nd;
                     break;
             }
-
             break;
         default:
-            std::cout << "token: " << (int) nd->tk.type << std::endl;
             throw std::runtime_error("Unknown token type during differentiating!");
     }
 
@@ -156,11 +154,40 @@ node* differentiator::diff_exp(node* nd) {
 void differentiator::diff() {
     node* diff_nd = diff_exp(expression_.get_tree());
     diff_expression_.set_tree(diff_nd);
+    diff_expression_.simplify();
 }
 
 // Generate the output LaTeX file
 void differentiator::generateLatex(const char* file_name) {
-    diff_expression_.latexOutput(file_name);
+    FILE* file = fopen(file_name, "w");
+    if (file == nullptr)
+        throw std::runtime_error("Can't open the LaTeX!");
+
+    // Write LaTeX code for creating a document
+    fprintf(file, "\\documentclass[12pt, a4paper]{article}\n");
+    fprintf(file, "\\usepackage[utf8]{inputenc}\n");
+    fprintf(file, "\\usepackage[russian]{babel}\n");
+    fprintf(file, "\\usepackage{hyperref}\n");
+    fprintf(file, "\\title{\\textbf{Acram Alpha}}\n");
+    fprintf(file, "\\date{Автор: \\href{https://github.com/synthMoza}{\\textbf{synthMoza}}}\n");
+    fprintf(file, "\\author{\\emph{Дифференциирование функций}}\n");
+    fprintf(file, "\\begin{document}\n");
+    fprintf(file, "\\maketitle\n");
+    fprintf(file, "\\center{\\textbf{Утрем нос Стивену Вольфраму!}} \\\\ \n");
+    fprintf(file, "\\emph{Исходная функция:}\n");
+    // Original function
+    fprintf(file, "\\[");
+    expression_.latexOutput(file);
+    fprintf(file, "\\]\n");
+    fprintf(file, "\\emph{Ее производная:}\n");
+    // Derivated function
+    fprintf(file, "\\[");
+    diff_expression_.latexOutput(file);
+    fprintf(file, "\\]\n");
+    fprintf(file, "\\end{document}\n");
+
+    fclose(file);
+
 }
 
 differentiator::~differentiator() {

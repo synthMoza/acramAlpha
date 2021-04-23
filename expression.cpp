@@ -35,7 +35,7 @@ node* node::copy(node* nd) {
     return new_nd;
 }
 
-expression::expression() : tree_ (nullptr), exp_counter_ (0) {}
+expression::expression() : tree_ (nullptr), exp_counter_ (0), simpled_ (false) {}
 
 // Grammar for recursive descent
 // TODO Needed at the end:
@@ -181,38 +181,168 @@ void expression::set_tree(node* nd) {
         delete tree_;
     
     tree_ = nd;
+    simpled_ = false;
 }
 
 node* expression::get_tree() {
     return tree_;
 }
 
-void expression::latexOutput(const char* file_name) {
-    FILE* file = fopen(file_name, "w");
-    if (file == nullptr)
-        throw std::runtime_error("Can't open the LaTeX!");
-    
-    // Write LaTeX code for creating a document
-    fprintf(file, "\\documentclass[12pt, a4paper]{article}\n");
-    fprintf(file, "\\usepackage[utf8]{inputenc}\n");
-    fprintf(file, "\\usepackage[russian]{babel}\n");
-    fprintf(file, "\\usepackage{hyperref}\n");
-    fprintf(file, "\\title{\\textbf{Acram Alpha}}\n");
-    fprintf(file, "\\date{Автор: \\href{https://github.com/synthMoza}{\\textbf{synthMoza}}}\n");
-    fprintf(file, "\\author{\\emph{Дифференциирование функций}}\n");
-    fprintf(file, "\\begin{document}\n");
-    fprintf(file, "\\maketitle\n");
-    fprintf(file, "\\center{\\textbf{Утрем нос Стивену Вольфраму!}} \\\\ \n");
-    //fprintf(file, "\\emph{Исходная функция:}\n");
-    // Original function
-    fprintf(file, "\\emph{Ее производная:}\n");
-    // Derivated function
-    fprintf(file, "\\[");
-    latex_print(file, tree_);
-    fprintf(file, "\\]\n");
-    fprintf(file, "\\end{document}\n");
+node* expression::simplify(node* nd) {
+    if (nd == nullptr)
+        return nd;
 
-    fclose(file);
+    // Try calculating this tree
+    try {
+        double value = calculate(nd);
+
+        delete nd;
+        nd = node::get_node();
+        nd->tk.type = token_type::TOKEN_NUM;
+        nd->tk.value = value;
+
+        return nd;
+    }
+    catch (std::exception& exception) {
+        // Failed to calculate this tree, go deeper
+    }
+
+    if (nd->tk.type == token_type::TOKEN_OP) {
+        node* nd_l = nd->leftChild_;
+        node* nd_r = nd->rightChild_;
+        node* tmp = nullptr;
+        
+        switch (nd->tk.op_id) {
+            case token_op_id::OP_PLUS:
+                // 0 + f = f
+                if (nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 0) {
+                    tmp = nd_r;
+
+                    delete nd->leftChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+                // f + 0 = 0
+                if (nd_r->tk.type == token_type::TOKEN_NUM && nd_r->tk.value == 0) {
+                    tmp = nd_l;
+
+                    delete nd->rightChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+
+                // Can't simplify this node, go deeper
+                nd->leftChild_ = simplify(nd->leftChild_);
+                nd->rightChild_ = simplify(nd->rightChild_);
+                return nd;
+                break;
+            case token_op_id::OP_MINUS:
+                // 0 - C = -C
+                if (nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 0 && nd_r->tk.type == token_type::TOKEN_NUM) {
+                    tmp = nd_r;
+
+                    delete nd->leftChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    tmp->tk.value *= -1;
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+                // f - 0 = 0
+                if (nd_r->tk.type == token_type::TOKEN_NUM && nd_r->tk.value == 0) {
+                    tmp = nd_l;
+
+                    delete nd->rightChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+
+                // Can't simplify this node, go deeper
+                nd->leftChild_ = simplify(nd->leftChild_);
+                nd->rightChild_ = simplify(nd->rightChild_);
+                return nd;
+                break;
+            case token_op_id::OP_MUL:
+                // f * 0 = 0 or 0 * f = 0
+                if ((nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 0) ||
+                    (nd_r->tk.type == token_type::TOKEN_NUM && nd_r->tk.value == 0)) {
+                    delete nd;
+
+                    tmp = node::get_node();
+                    tmp->tk.type = token_type::TOKEN_NUM;
+                    tmp->tk.value = 0;
+                    simpled_ = true;
+                    return tmp;
+                }
+                // 1 * f = f;
+                if (nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 1) {
+                    tmp = nd_r;
+
+                    delete nd->leftChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+                // f * 1 = f;
+                if (nd_r->tk.type == token_type::TOKEN_NUM && nd_r->tk.value == 1) {
+                    tmp = nd_l;
+
+                    delete nd->rightChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+
+                // Can't simplify this node, go deeper
+                nd->leftChild_ = simplify(nd->leftChild_);
+                nd->rightChild_ = simplify(nd->rightChild_);
+                return nd;
+                break;
+            case token_op_id::OP_DIV:
+                // TODO
+                return nd;
+                break;
+            default:
+                // Can't simplify this node, go deeper
+                nd->leftChild_ = simplify(nd->leftChild_);
+                nd->rightChild_ = simplify(nd->rightChild_);
+                return nd;
+        }
+    } else {
+        // Not the operation, can't be simplified
+        return nd;
+    }
+}
+
+void expression::simplify() {
+    do {
+        simpled_ = false;
+        tree_ = simplify(tree_);
+    } while (simpled_ == true);
+}
+
+void expression::latexOutput(FILE* file) {
+    latex_print(file, tree_);
 }
 
 void expression::latex_print(FILE* file, node* nd) {
@@ -236,15 +366,15 @@ void expression::latex_print(FILE* file, node* nd) {
                 case token_op_id::OP_PLUS:
                     latex_print(file, nd->leftChild_);
                     fprintf(file, " + ");
-                    latex_print(file, nd->leftChild_);
+                    latex_print(file, nd->rightChild_);
                     break;
                 case token_op_id::OP_MINUS:
                     latex_print(file, nd->leftChild_);
                     fprintf(file, " - ");
-                    latex_print(file, nd->leftChild_);
+                    latex_print(file, nd->rightChild_);
                     break;
                 case token_op_id::OP_MUL:
-                    if (nd->leftChild_->tk.type == token_type::TOKEN_VAR) {
+                    if (nd->leftChild_->tk.type == token_type::TOKEN_OP) {
                         fprintf(file, "(");
                         latex_print(file, nd->leftChild_);
                         fprintf(file, ")");
@@ -254,7 +384,7 @@ void expression::latex_print(FILE* file, node* nd) {
                 
                     fprintf(file, " * ");
 
-                    if (nd->rightChild_->tk.type == token_type::TOKEN_VAR) {
+                    if (nd->rightChild_->tk.type == token_type::TOKEN_OP) {
                         fprintf(file, "(");
                         latex_print(file, nd->rightChild_);
                         fprintf(file, ")");

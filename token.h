@@ -21,7 +21,6 @@ namespace se {
         token_type type;
         union {
             token_op_id op_id; // operation ID
-            char* var; // variable value
             double value; // number value
         };
 
