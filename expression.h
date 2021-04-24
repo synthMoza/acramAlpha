@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cmath>
+#include <cstring>
+
 #include "token.h"
 #include "vector.h"
 
@@ -28,23 +31,45 @@ namespace se {
         node* copy(node* nd);
     };
 
+    // Maximum input expression size
+    const std::size_t max_str_size = 256;
+
     // Class that enables to build expression trees out of token vectors
     // and work with them
     class expression {
+        char* str_; // the expression string
         node* tree_; // the expression tree
         std::size_t exp_counter_; // iterating index for several methods
+        vector<token> tokens_; // vector of tokens from the input string
 
+        // Tokenization methods
+        // ==================================
+        void tokenize();
+        int get_token_op(); // operation token
+        int get_token_num(); // number token
+        int get_token_var(); // variable token
+        // ==================================
         // Recursive descent methods
         // ==================================
-        node* getPlusMinus(const vector<token>& tokens);
-        node* getMulDiv(const vector<token>& tokens);
-        node* getBrackets(const vector<token>& tokens);
-        node* getNumVar(const vector<token>& tokens);
+        node* getPlusMinus();
+        node* getMulDiv();
+        node* getPow();
+        node* getMathFunc();
+        node* getBrackets();
+        node* getNumVar();
         // ==================================
         // Recursive method for calculating expression
-        double calculate(node* nd, double value = 0);
-        // LaTeX output recursive method
+        double calculate(node* nd);
+        // LaTeX output recursive methods
+        // ==================================
         void latex_print(FILE* file, node* nd);
+        void latex_print_plus(FILE* file, node* nd);
+        void latex_print_minus(FILE* file, node* nd);
+        void latex_print_mul(FILE* file, node* nd);
+        void latex_print_div(FILE* file, node* nd);
+        void latex_print_pow(FILE* file, node* nd);
+        void latex_print_mathfunc(FILE* file, node* nd, const char* func);
+        // ==================================
         // Simplify the expression
         node* simplify(node* nd);
 
@@ -52,17 +77,19 @@ namespace se {
     public:
         expression();
 
+        // Set the expression string
+        void set_string(const char* input_str);
         // Simplify the expression
         void simplify();
         // Build the expression tree of this vector of tokens
-        void build_tree(const vector<token>& tokens);
+        void build_tree(const char* input_str);
         // Return the current expression tree
         node* get_tree();
         // Set the new expression tree
         void set_tree(node* nd);
         // Return the value of this expression
         // If it can not be calculated (includes a variable), set variable's value to the given argument
-        double calculate(double value = 0);
+        double calculate();
         // Output this expression into the LaTeX file
         void latexOutput(FILE* file);
         ~expression();

@@ -2,146 +2,378 @@
 
 using namespace se;
 
-differentiator::differentiator() : str_ (new char[max_str_size]), expression_() {}
-
 void differentiator::set_expression(const char* input_str) {
-    strcpy(str_, input_str);
-    tokenize(); // first tokenize the expression
-    expression_.build_tree(tokens_); // built the expression tree
-    //std::cout << "Value: " << expression_.calculate() << std::endl;
+    expression_.set_string(input_str);
+    expression_.build_tree(input_str); // built the expression tree
 }
 
-int differentiator::get_token_op() {
-    int consumed = 0;
-    token tk;
+node* differentiator::diff_num(node* nd) {
+    // (C)' = 0
+    node* new_nd;
 
-    #define DEF_OP(name, value)                                 \
-        sscanf(str_, value "%n", &consumed);                    \
-        if (consumed > 0) {                                     \
-            tk.type = token_type::TOKEN_OP;                     \
-            tk.op_id = token_op_id::OP_##name;                  \
-            goto token_consumed;                                \
-        }
-    #include "def_op.h"
-    #undef DEF_OP
-    // Failed to consume this token
-    return 1;
-token_consumed:
-    tokens_.push_back(tk);
-    str_ += consumed;
-    return 0;
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_NUM;
+    new_nd->tk.value = 0;
+
+    return new_nd;
 }
 
-int differentiator::get_token_num() {
-    int consumed = 0;
-    double value = 0;
-    token tk;
+node* differentiator::diff_var(node* nd) {
+    // (x)' = 1
+    node* new_nd;
+    
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_NUM;
+    new_nd->tk.value = 1;
 
-    sscanf(str_, "%lg%n", &value, &consumed);
-    if (consumed > 0) {
-        tk.type = token_type::TOKEN_NUM;
-        tk.value = value;
-        goto token_consumed;
+    return new_nd;
+}
+
+node* differentiator::diff_plus_minus(node* nd) {
+    // (f+g)' = f' + g'
+    node* new_nd;
+    
+    new_nd = node::get_node();
+    new_nd->set_token(nd->tk);
+
+    new_nd->leftChild_ = diff_exp(nd->leftChild_);
+    new_nd->rightChild_ = diff_exp(nd->rightChild_);
+
+    return new_nd;
+}
+
+node* differentiator::diff_mul(node* nd) {
+    // (fg)' = f'g + fg'
+    node* new_nd;
+    node* lnew_nd = nullptr;
+    node* rnew_nd = nullptr;
+    
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_PLUS;
+
+    lnew_nd = node::get_node();
+    lnew_nd->tk.type = token_type::TOKEN_OP;
+    lnew_nd->tk.op_id = token_op_id::OP_MUL;
+    lnew_nd->leftChild_ = diff_exp(nd->leftChild_);
+    lnew_nd->rightChild_ = nd->rightChild_->copy();
+
+    rnew_nd = node::get_node();
+    rnew_nd->tk.type = token_type::TOKEN_OP;
+    rnew_nd->tk.op_id = token_op_id::OP_MUL;
+    rnew_nd->leftChild_ = nd->leftChild_->copy();
+    rnew_nd->rightChild_ = diff_exp(nd->rightChild_);
+
+    new_nd->leftChild_ = lnew_nd;
+    new_nd->rightChild_ = rnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_pow(node* nd) {
+    node* new_nd;
+    node* lnew_nd = nullptr;
+    node* rnew_nd = nullptr;
+    node* rrnew_nd = nullptr;
+    node* rrrnew_nd = nullptr;
+    node* rlnew_nd = nullptr;
+    
+    if (nd->leftChild_->tk.type == token_type::TOKEN_NUM) {
+        // (a^x)' = a^x * ln(a)
+        new_nd = node::get_node();
+        new_nd->tk.type = token_type::TOKEN_OP;
+        new_nd->tk.op_id = token_op_id::OP_MUL;
+
+        lnew_nd = nd->copy();
+
+        rnew_nd = node::get_node();
+        rnew_nd->tk.type = token_type::TOKEN_OP;
+        rnew_nd->tk.op_id = token_op_id::OP_LN;
+        rnew_nd->leftChild_ = node::get_node();
+        rnew_nd->leftChild_->set_token(nd->leftChild_->tk);
+
+        new_nd->leftChild_ = lnew_nd;
+        new_nd->rightChild_ = rnew_nd;
+
+        return new_nd;
     }
-    // Failed to consume this token
-    return 1;
-token_consumed:
-    tokens_.push_back(tk);
-    str_ += consumed;
-    return 0;
-}
 
-int differentiator::get_token_var() {
-    int consumed = 0;
-    token tk;
+    if (nd->rightChild_->tk.type == token_type::TOKEN_NUM) {
+        // (x^a)' = a*x^(a-1)
+        new_nd = node::get_node();
+        new_nd->tk.type = token_type::TOKEN_OP;
+        new_nd->tk.op_id = token_op_id::OP_MUL;
 
-    sscanf(str_, VAR "%n", &consumed);
-    if (consumed > 0) {
-        tk.type = token_type::TOKEN_VAR;
-        goto token_consumed;
-    }
-    // Failed to consume this token
-    return 1;
-token_consumed:
-    tokens_.push_back(tk);
-    str_ += consumed;
-    return 0;
-}
+        lnew_nd = nd->rightChild_->copy();
 
-void differentiator::tokenize() {
-    if (str_ == nullptr)
-        throw std::runtime_error("Empty expression/variable!");
+        rnew_nd = nd->copy();
+        rnew_nd->rightChild_->tk.value -= 1;
 
-    std::size_t length = strlen(str_);
-    while (*str_ != '\0') {
-        // Iterate through the whole expression
-        if (get_token_op() && get_token_num() && get_token_var() == 1) {
-            // Unknown token
-            throw std::runtime_error("Failed to tokenize the expression!");
-        }
+        new_nd->leftChild_ = lnew_nd;
+        new_nd->rightChild_ = rnew_nd;
+
+        return new_nd;
     }
 
-    // Return the string to the normal state
-    str_ -= length;
+    // (f^g)' = f^g * (g'ln(f)+g/f)
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_MUL;
 
-    // Add the empty last token for correct working algorithm
-    tokens_.push_back(token());
+    lnew_nd = nd->copy();
+    
+    rnew_nd = node::get_node();
+    rnew_nd->tk.type = token_type::TOKEN_OP;
+    rnew_nd->tk.op_id = token_op_id::OP_PLUS;
+
+    rrnew_nd = node::get_node();
+    rrnew_nd->tk.type = token_type::TOKEN_OP;
+    rrnew_nd->tk.op_id = token_op_id::OP_MUL;
+
+    rrrnew_nd = node::get_node();
+    rrrnew_nd->tk.type = token_type::TOKEN_OP;
+    rrrnew_nd->tk.op_id = token_op_id::OP_DIV;
+    rrrnew_nd->leftChild_ = nd->rightChild_->copy();
+    rrrnew_nd->rightChild_ = nd->leftChild_->copy();
+
+    rrnew_nd->rightChild_ = rrrnew_nd;
+    rrnew_nd->leftChild_ = diff_exp(nd->leftChild_);
+
+    rlnew_nd = node::get_node();
+    rlnew_nd->tk.type = token_type::TOKEN_OP;
+    rlnew_nd->tk.op_id = token_op_id::OP_MUL;
+    
+    rlnew_nd->leftChild_ = diff_exp(nd->rightChild_);
+    rlnew_nd->rightChild_ = node::get_node();
+    rlnew_nd->rightChild_->tk.type = token_type::TOKEN_OP;
+    rlnew_nd->rightChild_->tk.op_id = token_op_id::OP_LN;
+    rlnew_nd->rightChild_->leftChild_ = nd->leftChild_->copy();
+    
+    rnew_nd->leftChild_ = rlnew_nd;
+    rnew_nd->rightChild_ = rrnew_nd;
+    new_nd->leftChild_ = lnew_nd;
+    new_nd->rightChild_ = rnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_sin(node* nd) {
+    // (sin(f))' = cos(f) * f'
+    node* new_nd;
+    node* lnew_nd = nullptr;
+    node* rnew_nd = nullptr;
+    
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_MUL;
+
+    lnew_nd = node::get_node();
+    lnew_nd->tk.type = token_type::TOKEN_OP;
+    lnew_nd->tk.op_id = token_op_id::OP_COS;
+    lnew_nd->leftChild_ = nd->leftChild_->copy();
+    rnew_nd = diff_exp(nd->leftChild_);
+
+    new_nd->leftChild_ = lnew_nd;
+    new_nd->rightChild_ = rnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_cos(node* nd) {
+    // (cos(f))' = -sin(f) * f'
+    node* new_nd;
+    node* lnew_nd = nullptr;
+    node* rnew_nd = nullptr;
+    
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_MUL;
+
+    rnew_nd = diff_exp(nd->leftChild_);
+
+    lnew_nd = node::get_node();
+    lnew_nd->tk.type = token_type::TOKEN_OP;
+    lnew_nd->tk.op_id = token_op_id::OP_MUL;
+    lnew_nd->leftChild_ = node::get_node();
+    lnew_nd->leftChild_->tk.type = token_type::TOKEN_NUM;
+    lnew_nd->leftChild_->tk.value = -1;
+    lnew_nd->rightChild_= node::get_node();
+    lnew_nd->rightChild_->tk.type = token_type::TOKEN_OP;
+    lnew_nd->rightChild_->tk.op_id = token_op_id::OP_SIN;
+    lnew_nd->rightChild_->leftChild_ = nd->leftChild_->copy();
+
+    new_nd->leftChild_ = lnew_nd;
+    new_nd->rightChild_ = rnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_div(node* nd) {
+    // (f/g)' = (f'g-gf')/g^2
+    node* new_nd;
+    node* lnew_nd = nullptr;
+    node* rnew_nd = nullptr;
+    
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_DIV;
+
+    lnew_nd = node::get_node();
+    lnew_nd->tk.type = token_type::TOKEN_OP;
+    lnew_nd->tk.op_id = token_op_id::OP_MINUS;
+    
+    lnew_nd->leftChild_ = node::get_node();
+    lnew_nd->leftChild_->tk.type = token_type::TOKEN_OP;
+    lnew_nd->leftChild_->tk.op_id = token_op_id::OP_MUL;
+    lnew_nd->leftChild_->leftChild_ = diff_exp(nd->leftChild_);
+    lnew_nd->leftChild_->rightChild_ = nd->rightChild_->copy();
+
+    lnew_nd->rightChild_ = node::get_node();
+    lnew_nd->rightChild_->tk.type = token_type::TOKEN_OP;
+    lnew_nd->rightChild_->tk.op_id = token_op_id::OP_MUL;
+    lnew_nd->rightChild_->leftChild_ = nd->leftChild_->copy();
+    lnew_nd->rightChild_->rightChild_ = diff_exp(nd->rightChild_);
+
+    rnew_nd = node::get_node();
+    rnew_nd->tk.type = token_type::TOKEN_OP;
+    rnew_nd->tk.op_id = token_op_id::OP_POW;
+    rnew_nd->leftChild_ = nd->rightChild_->copy();
+    rnew_nd->rightChild_ = node::get_node();
+    rnew_nd->rightChild_->tk.type = token_type::TOKEN_NUM;
+    rnew_nd->rightChild_->tk.value = 2;
+
+    new_nd->leftChild_ = lnew_nd;
+    new_nd->rightChild_ = rnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_ln(node* nd) {
+    // (ln(f))' = f'/f
+    node* new_nd = nullptr;
+
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_DIV;
+    new_nd->leftChild_ = diff_exp(nd->leftChild_);
+    new_nd->rightChild_ = nd->leftChild_->copy();
+
+    return new_nd;
+}
+
+node* differentiator::diff_tg(node* nd) {
+    // (tg(f))' = f' / cos^2(f)
+    node* new_nd = nullptr;
+    node* rnew_nd = nullptr;
+    node* lnew_nd = nullptr;
+
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_DIV;
+    
+    lnew_nd = diff_exp(nd->leftChild_);
+
+    rnew_nd = node::get_node();
+    rnew_nd->tk.type = token_type::TOKEN_OP;
+    rnew_nd->tk.op_id = token_op_id::OP_POW;
+    
+    rnew_nd->leftChild_ = node::get_node();
+    rnew_nd->leftChild_->tk.type = token_type::TOKEN_OP;
+    rnew_nd->leftChild_->tk.op_id = token_op_id::OP_COS;
+    rnew_nd->leftChild_->leftChild_ = nd->leftChild_->copy();
+    rnew_nd->rightChild_ = node::get_node();
+    rnew_nd->rightChild_->tk.type = token_type::TOKEN_NUM;
+    rnew_nd->rightChild_->tk.value = 2;
+
+    new_nd->rightChild_ = rnew_nd;
+    new_nd->leftChild_ = lnew_nd;
+
+    return new_nd;
+}
+
+node* differentiator::diff_ctg(node* nd) {
+    // (ctg(f))' = -1 * f' / sin^2(f)
+    node* new_nd = nullptr;
+    node* rnew_nd = nullptr;
+    node* lnew_nd = nullptr;
+
+    new_nd = node::get_node();
+    new_nd->tk.type = token_type::TOKEN_OP;
+    new_nd->tk.op_id = token_op_id::OP_MUL;
+    new_nd->leftChild_ = node::get_node();
+    new_nd->leftChild_->tk.type = token_type::TOKEN_NUM;
+    new_nd->leftChild_->tk.value = -1;
+
+    new_nd->rightChild_ = node::get_node();
+    new_nd->rightChild_->tk.type = token_type::TOKEN_OP;
+    new_nd->rightChild_->tk.op_id = token_op_id::OP_DIV;
+    
+    lnew_nd = diff_exp(nd->leftChild_);
+
+    rnew_nd = node::get_node();
+    rnew_nd->tk.type = token_type::TOKEN_OP;
+    rnew_nd->tk.op_id = token_op_id::OP_POW;
+    
+    rnew_nd->leftChild_ = node::get_node();
+    rnew_nd->leftChild_->tk.type = token_type::TOKEN_OP;
+    rnew_nd->leftChild_->tk.op_id = token_op_id::OP_SIN;
+    rnew_nd->leftChild_->leftChild_ = nd->leftChild_->copy();
+    rnew_nd->rightChild_ = node::get_node();
+    rnew_nd->rightChild_->tk.type = token_type::TOKEN_NUM;
+    rnew_nd->rightChild_->tk.value = 2;
+
+    new_nd->rightChild_->rightChild_ = rnew_nd;
+    new_nd->rightChild_->leftChild_ = lnew_nd;
+
+    return new_nd;
 }
 
 node* differentiator::diff_exp(node* nd) {
     node* new_nd = nullptr;
-    node* lnew_nd = nullptr;
-    node* rnew_nd = nullptr;
 
     if (nd == nullptr)
         throw std::runtime_error("Unexpected empty node while differentiating!");
 
     switch (nd->tk.type) {
         case token_type::TOKEN_NUM:
-            // (C)' = 0
-            new_nd = node::get_node();
-            new_nd->tk.type = token_type::TOKEN_NUM;
-            new_nd->tk.value = 0;
+            new_nd = diff_num(nd);
             break;
         case token_type::TOKEN_VAR:
-            // (x)' = 1
-            new_nd = node::get_node();
-            new_nd->tk.type = token_type::TOKEN_NUM;
-            new_nd->tk.value = 1;
+            new_nd = diff_var(nd);
             break;
         case token_type::TOKEN_OP:
             // Operations derivate
             switch (nd->tk.op_id) {
                 case token_op_id::OP_PLUS:
                 case token_op_id::OP_MINUS:
-                    // (f+g)' = f' + g'
-                    new_nd = node::get_node();
-                    new_nd->set_token(nd->tk);
-
-                    new_nd->leftChild_ = diff_exp(nd->leftChild_);
-                    new_nd->rightChild_ = diff_exp(nd->rightChild_);
+                    new_nd = diff_plus_minus(nd);
                     break;
                 case token_op_id::OP_MUL:
-                    // (fg)' = f'g + fg'
-                    new_nd = node::get_node();
-                    new_nd->tk.type = token_type::TOKEN_OP;
-                    new_nd->tk.op_id = token_op_id::OP_PLUS;
-
-                    lnew_nd = node::get_node();
-                    lnew_nd->tk.type = token_type::TOKEN_OP;
-                    lnew_nd->tk.op_id = token_op_id::OP_MUL;
-                    lnew_nd->leftChild_ = diff_exp(nd->leftChild_);
-                    lnew_nd->rightChild_ = nd->rightChild_->copy();
-
-                    rnew_nd = node::get_node();
-                    rnew_nd->tk.type = token_type::TOKEN_OP;
-                    rnew_nd->tk.op_id = token_op_id::OP_MUL;
-                    rnew_nd->leftChild_ = nd->leftChild_->copy();
-                    rnew_nd->rightChild_ = diff_exp(nd->rightChild_);
-
-                    new_nd->leftChild_ = lnew_nd;
-                    new_nd->rightChild_ = rnew_nd;
+                    new_nd = diff_mul(nd);
                     break;
+                case token_op_id::OP_POW:
+                    new_nd = diff_pow(nd);
+                    break;
+                case token_op_id::OP_SIN:
+                    new_nd = diff_sin(nd);
+                    break;
+                case token_op_id::OP_COS:
+                    new_nd = diff_cos(nd);
+                    break;
+                case token_op_id::OP_DIV:
+                    new_nd = diff_div(nd);
+                    break;
+                case token_op_id::OP_TG:
+                    new_nd = diff_tg(nd);
+                    break;
+                case token_op_id::OP_CTG:
+                    new_nd = diff_ctg(nd);
+                    break;
+                case token_op_id::OP_LN:
+                    new_nd = diff_ln(nd);
+                    break;
+                default:
+                    throw std::runtime_error("Unknown operation for differentiating!");
             }
             break;
         default:
@@ -170,7 +402,7 @@ void differentiator::generateLatex(const char* file_name) {
     fprintf(file, "\\usepackage{hyperref}\n");
     fprintf(file, "\\title{\\textbf{Acram Alpha}}\n");
     fprintf(file, "\\date{Автор: \\href{https://github.com/synthMoza}{\\textbf{synthMoza}}}\n");
-    fprintf(file, "\\author{\\emph{Дифференциирование приложений}}\n");
+    fprintf(file, "\\author{\\emph{Дифференциирование функций}}\n");
     fprintf(file, "\\begin{document}\n");
     fprintf(file, "\\maketitle\n");
     fprintf(file, "\\center{\\textbf{Утрем нос Стивену Вольфраму!}} \\\\ \n");
@@ -181,16 +413,11 @@ void differentiator::generateLatex(const char* file_name) {
     fprintf(file, "\\]\n");
     fprintf(file, "\\emph{Её производная:}\n");
     // Derivated function
-    fprintf(file, "\\[f'(x) = [");
+    fprintf(file, "\\[f'(x) = ");
     diff_expression_.latexOutput(file);
     fprintf(file, "\\]\n");
     fprintf(file, "\\end{document}\n");
 
     fclose(file);
 
-}
-
-differentiator::~differentiator() {
-    if (str_ != nullptr)
-        delete[] str_;
 }

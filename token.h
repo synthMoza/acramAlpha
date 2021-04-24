@@ -12,7 +12,6 @@ namespace se {
     };
 
     // Enum class that contains all token types
-    // TODO Add variables and constants
     enum class token_type {
         TOKEN_NOPE, TOKEN_OP, TOKEN_NUM, TOKEN_VAR, TOKEN_COUNT
     };
@@ -23,7 +22,17 @@ namespace se {
             token_op_id op_id; // operation ID
             double value; // number value
         };
-
+    
         token() : type (), value () {}
+        // Returns true if the token is one of operations: sin, cos, tg, ctg, ln
+        bool isMathFunc() {
+            return (type == token_type::TOKEN_OP && (op_id == token_op_id::OP_SIN || op_id == token_op_id::OP_COS || 
+                op_id == token_op_id::OP_TG || op_id == token_op_id::OP_CTG || op_id == token_op_id::OP_LN));
+        }
+        // Returns true if the token is one of the operations: +, -, *, /
+        bool isCommonOp() {
+            return (type == token_type::TOKEN_OP && (op_id == token_op_id::OP_PLUS || op_id == token_op_id::OP_MINUS || 
+                op_id == token_op_id::OP_MUL || op_id == token_op_id::OP_DIV));
+        }
     };
 }

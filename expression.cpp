@@ -35,36 +35,115 @@ node* node::copy(node* nd) {
     return new_nd;
 }
 
-expression::expression() : tree_ (nullptr), exp_counter_ (0), simpled_ (false) {}
+expression::expression() : str_ (new char[max_str_size]), tree_ (nullptr), exp_counter_ (0), simpled_ (false) {}
 
-// Grammar for recursive descent
-// TODO Needed at the end:
-// getTree ::= getPlusMinus'\0'
-// getPlusMinus ::= getMulDiv{'+'/'-' getMulDiv}*
-// getMulDiv ::= getPow {'*'/':' getPow}*
-// getPow ::= getMathFunc{'^' getMathFunc}
-// getMathFunc ::= ('sin' | 'cos' | 'ln' | 'tan' | 'sqrt') '(' getPlusMinus ')' | getBrackets
-// getBrackets ::= getNumVar | '(' getPlusMinus ')'
-// getNumVar ::= NUMBER | 'x' | CONST
+void expression::set_string(const char* input_str) {
+    str_ = strcpy(str_, input_str);
+}
 
-// Now:
+int expression::get_token_op() {
+    int consumed = 0;
+    token tk;
+
+    #define DEF_OP(name, value)                                 \
+        sscanf(str_, value "%n", &consumed);                    \
+        if (consumed > 0) {                                     \
+            tk.type = token_type::TOKEN_OP;                     \
+            tk.op_id = token_op_id::OP_##name;                  \
+            goto token_consumed;                                \
+        }
+    #include "def_op.h"
+    #undef DEF_OP
+    // Failed to consume this token
+    return 1;
+token_consumed:
+    tokens_.push_back(tk);
+    str_ += consumed;
+    return 0;
+}
+
+int expression::get_token_num() {
+    int consumed = 0;
+    double value = 0;
+    token tk;
+
+    sscanf(str_, "%lg%n", &value, &consumed);
+    if (consumed > 0) {
+        tk.type = token_type::TOKEN_NUM;
+        tk.value = value;
+        goto token_consumed;
+    }
+    // Failed to consume this token
+    return 1;
+token_consumed:
+    tokens_.push_back(tk);
+    str_ += consumed;
+    return 0;
+}
+
+int expression::get_token_var() {
+    int consumed = 0;
+    token tk;
+
+    sscanf(str_, VAR "%n", &consumed);
+    if (consumed > 0) {
+        tk.type = token_type::TOKEN_VAR;
+        goto token_consumed;
+    }
+    // Failed to consume this token
+    return 1;
+token_consumed:
+    tokens_.push_back(tk);
+    str_ += consumed;
+    return 0;
+}
+
+void expression::tokenize() {
+    if (str_ == nullptr)
+        throw std::runtime_error("Empty expression/variable!");
+
+    tokens_.reserve(128);
+    std::size_t length = strlen(str_);
+    while (*str_ != '\0') {
+        // Iterate through the whole expression
+        // Skip spaces
+        while (isspace(*str_))
+            str_++;
+        
+        if (get_token_op() && get_token_num() && get_token_var() == 1) {
+            // Unknown token
+            throw std::runtime_error("Failed to tokenize the expression!");
+        }
+    }
+
+    // Return the string to the normal state
+    str_ -= length;
+
+    // Add the empty last token for correct working algorithm
+    tokens_.push_back(token());
+}
+
+// Grammar for recursive descent:
 // build_tree ::= getPlusMinus'\0'
 // getPlusMinus ::= getMulDiv{'+'/'-' getMulDiv}*
-// getMulDiv ::= getBrackets {'*'/'/' getBrackets}*
+// getMulDiv ::= getPow {'*'/'/' getPow}*
+// getPow ::= getMathFunc {'^' getMathFunc}
+// getMathFunc ::= ('sin' | 'cos' | 'ln' | 'tg' | 'ctg') '(' getPlusMinus ')' | getBrackets
 // getBrackets ::= getNumVar | '(' getPlusMinus ')'
 // getNumVar ::= [0-9]*
 
-void expression::build_tree(const vector<token>& tokens) {
-    tree_ = getPlusMinus(tokens);
-    if (tokens[exp_counter_++].type != token_type::TOKEN_NOPE)
+void expression::build_tree(const char* input_str) {
+    tokenize();
+    tree_ = getPlusMinus();
+    if (tokens_[exp_counter_++].type != token_type::TOKEN_NOPE)
         throw std::runtime_error("Unknown syntax error! Expected the end of the expression!\n");
 }
 
-node* expression::getPlusMinus(const vector<token>& tokens) {
+node* expression::getPlusMinus() {
     node* nd = nullptr;
     
-    nd = getMulDiv(tokens);
-    token& tk = tokens[exp_counter_];
+    nd = getMulDiv();
+    token& tk = tokens_[exp_counter_];
     if (tk.type == token_type::TOKEN_OP && ((tk.op_id == token_op_id::OP_PLUS) || (tk.op_id == token_op_id::OP_MINUS))) {
         // If we have plus-minus token, run another getPlusMinus
         exp_counter_++;
@@ -74,7 +153,7 @@ node* expression::getPlusMinus(const vector<token>& tokens) {
 
         // Initialize children
         extra_nd->leftChild_ = nd;
-        extra_nd->rightChild_ = getPlusMinus(tokens);
+        extra_nd->rightChild_ = getPlusMinus();
 
         return extra_nd;
     } else {
@@ -82,11 +161,11 @@ node* expression::getPlusMinus(const vector<token>& tokens) {
     }
 }
 
-node* expression::getMulDiv(const vector<token>& tokens) {
+node* expression::getMulDiv() {
     node* nd = nullptr;
     
-    nd = getBrackets(tokens);
-    token& tk = tokens[exp_counter_];
+    nd = getPow();
+    token& tk = tokens_[exp_counter_];
     if (tk.type == token_type::TOKEN_OP && ((tk.op_id == token_op_id::OP_MUL) || (tk.op_id == token_op_id::OP_DIV))) {
         // If we have mul-div token, run another getMulDiv
         exp_counter_++;
@@ -96,7 +175,7 @@ node* expression::getMulDiv(const vector<token>& tokens) {
 
         // Initialize children
         extra_nd->leftChild_ = nd;
-        extra_nd->rightChild_ = getMulDiv(tokens);
+        extra_nd->rightChild_ = getMulDiv();
 
         return extra_nd;
     } else {
@@ -104,16 +183,72 @@ node* expression::getMulDiv(const vector<token>& tokens) {
     }
 }
 
-node* expression::getBrackets(const vector<token>& tokens) {
+node* expression::getPow() {
+    node* nd = nullptr;
+    
+    nd = getMathFunc();
+    token& tk = tokens_[exp_counter_];
+    if (tk.type == token_type::TOKEN_OP && tk.op_id == token_op_id::OP_POW) {
+        // If we have pow token, run another getPow
+        exp_counter_++;
+        // Copy the token
+        node* extra_nd = node::get_node();
+        extra_nd->set_token(tk);
+
+        // Initialize children
+        extra_nd->leftChild_ = nd;
+        extra_nd->rightChild_ = getPow();
+
+        return extra_nd;
+    } else {
+        return nd;
+    }
+}
+
+node* expression::getMathFunc() {
     node* nd = nullptr;
 
-    token& tk = tokens[exp_counter_];
+    token& tk = tokens_[exp_counter_];
+    if (tk.type == token_type::TOKEN_OP && (tk.op_id == token_op_id::OP_LN || tk.op_id == token_op_id::OP_SIN 
+    || tk.op_id == token_op_id::OP_COS || tk.op_id == token_op_id::OP_TG || tk.op_id == token_op_id::OP_CTG)) {
+        node* tmp = nullptr;
+        // If we have math_func token, run another getMathFunc
+        exp_counter_++;
+        // Copy the token
+        node* extra_nd = node::get_node();
+        extra_nd->set_token(tk);
+
+        // Check brackets
+        tk = tokens_[exp_counter_++];
+        if (tk.type != token_type::TOKEN_OP || tk.op_id != token_op_id::OP_BR_L)
+            throw std::runtime_error("Error with mathfunc syntax!");
+
+        tmp = getPlusMinus(); 
+
+        // Check brackets
+        tk = tokens_[exp_counter_++];
+        if (tk.type != token_type::TOKEN_OP || tk.op_id != token_op_id::OP_BR_R)
+            throw std::runtime_error("Error with mathfunc syntax!");
+        
+        extra_nd->leftChild_ = tmp;
+
+        return extra_nd;
+    } else 
+        nd = getBrackets();
+    
+    return nd;
+}
+
+node* expression::getBrackets() {
+    node* nd = nullptr;
+
+    token& tk = tokens_[exp_counter_];
 
     // If we have brackets, call getPlusMinus
     if (tk.type == token_type::TOKEN_OP && tk.op_id == token_op_id::OP_BR_L) {
         exp_counter_++;
-        nd = getPlusMinus(tokens);
-        tk = tokens[exp_counter_];
+        nd = getPlusMinus();
+        tk = tokens_[exp_counter_];
 
         // If brackets are not closed, it is a syntax error
         if (tk.type != token_type::TOKEN_OP || tk.op_id != token_op_id::OP_BR_R)
@@ -123,13 +258,13 @@ node* expression::getBrackets(const vector<token>& tokens) {
         return nd;
     } else {
         // We have a number/var
-        return getNumVar(tokens);
+        return getNumVar();
     }
 }
 
-node* expression::getNumVar(const vector<token>& tokens) {
+node* expression::getNumVar() {
     node* nd = nullptr;
-    token& tk = tokens[exp_counter_];
+    token& tk = tokens_[exp_counter_];
 
     if (tk.type == token_type::TOKEN_NUM || tk.type == token_type::TOKEN_VAR) {
         nd = node::get_node();
@@ -141,7 +276,7 @@ node* expression::getNumVar(const vector<token>& tokens) {
     return nd;
 }
 
-double expression::calculate(node* nd, double value) {
+double expression::calculate(node* nd) {
     double tmp = 0;
     if (nd == nullptr)
         throw std::runtime_error("Sudden empty node while calculating!");
@@ -152,17 +287,19 @@ double expression::calculate(node* nd, double value) {
         case token_type::TOKEN_OP:
             switch (nd->tk.op_id) {
                 case token_op_id::OP_PLUS:
-                    return calculate(nd->leftChild_, value) + calculate(nd->rightChild_, value);
+                    return calculate(nd->leftChild_) + calculate(nd->rightChild_);
                 case token_op_id::OP_MINUS:
-                    return calculate(nd->leftChild_, value) - calculate(nd->rightChild_, value);
+                    return calculate(nd->leftChild_) - calculate(nd->rightChild_);
                 case token_op_id::OP_MUL:
-                    return calculate(nd->leftChild_, value) * calculate(nd->rightChild_, value);
+                    return calculate(nd->leftChild_) * calculate(nd->rightChild_);
                 case token_op_id::OP_DIV:
-                    tmp = calculate(nd->rightChild_, value);
+                    tmp = calculate(nd->rightChild_);
                     if (tmp == 0)
                         throw std::logic_error("Divishion by zero while calculating!");
 
-                    return (calculate(nd->leftChild_, value) / tmp);
+                    return (calculate(nd->leftChild_) / tmp);
+                case token_op_id::OP_POW:
+                    return pow(calculate(nd->leftChild_), calculate(nd->rightChild_));
                 default:
                     throw std::runtime_error("Sudden unknown operation while calculating!");
             }
@@ -172,8 +309,8 @@ double expression::calculate(node* nd, double value) {
     }
 }
 
-double expression::calculate(double value) {
-    return calculate(tree_, value);
+double expression::calculate() {
+    return calculate(tree_);
 }
 
 void expression::set_tree(node* nd) {
@@ -243,7 +380,6 @@ node* expression::simplify(node* nd) {
                 nd->leftChild_ = simplify(nd->leftChild_);
                 nd->rightChild_ = simplify(nd->rightChild_);
                 return nd;
-                break;
             case token_op_id::OP_MINUS:
                 // 0 - C = -C
                 if (nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 0 && nd_r->tk.type == token_type::TOKEN_NUM) {
@@ -275,7 +411,6 @@ node* expression::simplify(node* nd) {
                 nd->leftChild_ = simplify(nd->leftChild_);
                 nd->rightChild_ = simplify(nd->rightChild_);
                 return nd;
-                break;
             case token_op_id::OP_MUL:
                 // f * 0 = 0 or 0 * f = 0
                 if ((nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 0) ||
@@ -286,7 +421,7 @@ node* expression::simplify(node* nd) {
                     tmp->tk.type = token_type::TOKEN_NUM;
                     tmp->tk.value = 0;
                     simpled_ = true;
-                    return tmp;
+                    return simplify(tmp);
                 }
                 // 1 * f = f;
                 if (nd_l->tk.type == token_type::TOKEN_NUM && nd_l->tk.value == 1) {
@@ -317,11 +452,34 @@ node* expression::simplify(node* nd) {
                 nd->leftChild_ = simplify(nd->leftChild_);
                 nd->rightChild_ = simplify(nd->rightChild_);
                 return nd;
-                break;
             case token_op_id::OP_DIV:
-                // TODO
+                // f/1 = f
+                if (nd->rightChild_->tk.type == token_type::TOKEN_NUM && nd->rightChild_->tk.value == 1) {
+                    tmp = nd_l;
+
+                    delete nd->rightChild_;
+                    nd->leftChild_ = nullptr;
+                    nd->rightChild_ = nullptr;
+                    delete nd;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+                // 0/f = 0
+                if (nd->leftChild_->tk.type == token_type::TOKEN_NUM && nd->leftChild_->tk.value == 0) {
+                    delete nd;
+
+                    tmp = node::get_node();
+                    tmp->tk.type = token_type::TOKEN_NUM;
+                    tmp->tk.value = 0;
+
+                    simpled_ = true;
+                    return simplify(tmp);
+                }
+                // Can't simplify this node
+                nd->leftChild_ = simplify(nd->leftChild_);
+                nd->rightChild_ = simplify(nd->rightChild_);
                 return nd;
-                break;
             default:
                 // Can't simplify this node, go deeper
                 nd->leftChild_ = simplify(nd->leftChild_);
@@ -345,6 +503,61 @@ void expression::latexOutput(FILE* file) {
     latex_print(file, tree_);
 }
 
+void expression::latex_print_plus(FILE* file, node* nd) {
+    latex_print(file, nd->leftChild_);
+    fprintf(file, " + ");
+    latex_print(file, nd->rightChild_);
+}
+
+void expression::latex_print_minus(FILE* file, node* nd) {
+    latex_print(file, nd->leftChild_);
+    fprintf(file, " - ");
+    latex_print(file, nd->rightChild_);
+}
+
+void expression::latex_print_mul(FILE* file, node* nd) {
+    if (nd->leftChild_->tk.isCommonOp()) {
+        fprintf(file, "(");
+        latex_print(file, nd->leftChild_);
+        fprintf(file, ")");
+    } else {
+        latex_print(file, nd->leftChild_);
+    }
+
+    fprintf(file, " \\cdot ");
+
+    if (nd->rightChild_->tk.isCommonOp()) {
+        fprintf(file, "(");
+        latex_print(file, nd->rightChild_);
+        fprintf(file, ")");
+    } else {
+        latex_print(file, nd->rightChild_);
+    }
+}
+
+void expression::latex_print_div(FILE* file, node* nd) {
+    fprintf(file, "\\frac{");
+    latex_print(file, nd->leftChild_);
+    fprintf(file, "}{");
+    latex_print(file, nd->rightChild_);
+    fprintf(file, "}");
+}
+
+void expression::latex_print_pow(FILE* file, node* nd) {
+    fprintf(file, "{");
+    latex_print(file, nd->leftChild_);
+    fprintf(file, "}^{");
+    latex_print(file, nd->rightChild_);
+    fprintf(file, "}");
+}
+
+void expression::latex_print_mathfunc(FILE* file, node* nd, const char* func) {
+    fprintf(file, "%s", func);
+    fprintf(file, "(");
+    latex_print(file, nd->leftChild_);
+    fprintf(file, ")");
+}
+
 void expression::latex_print(FILE* file, node* nd) {
     if (file == nullptr)
         throw std::runtime_error("Unexpcted empty file while generating LaTeX file!");
@@ -364,42 +577,37 @@ void expression::latex_print(FILE* file, node* nd) {
         case token_type::TOKEN_OP:
             switch (nd->tk.op_id) {
                 case token_op_id::OP_PLUS:
-                    latex_print(file, nd->leftChild_);
-                    fprintf(file, " + ");
-                    latex_print(file, nd->rightChild_);
+                    latex_print_plus(file, nd);
                     break;
                 case token_op_id::OP_MINUS:
-                    latex_print(file, nd->leftChild_);
-                    fprintf(file, " - ");
-                    latex_print(file, nd->rightChild_);
+                    latex_print_minus(file, nd);
                     break;
                 case token_op_id::OP_MUL:
-                    if (nd->leftChild_->tk.type == token_type::TOKEN_OP) {
-                        fprintf(file, "(");
-                        latex_print(file, nd->leftChild_);
-                        fprintf(file, ")");
-                    } else {
-                        latex_print(file, nd->leftChild_);
-                    }
-                
-                    fprintf(file, " * ");
-
-                    if (nd->rightChild_->tk.type == token_type::TOKEN_OP) {
-                        fprintf(file, "(");
-                        latex_print(file, nd->rightChild_);
-                        fprintf(file, ")");
-                    } else {
-                        latex_print(file, nd->rightChild_);
-                    }
+                    latex_print_mul(file, nd);
                     break;
                 case token_op_id::OP_DIV:
-                    fprintf(file, "\\frac{");
-                    latex_print(file, nd->leftChild_);
-                    fprintf(file, "}{");
-                    latex_print(file, nd->rightChild_);
-                    fprintf(file, "}");
+                    latex_print_div(file, nd);
+                    break;
+                case token_op_id::OP_POW:
+                    latex_print_pow(file, nd);
+                    break;
+                case token_op_id::OP_SIN:
+                    latex_print_mathfunc(file, nd, "sin");
+                    break;
+                case token_op_id::OP_COS:
+                    latex_print_mathfunc(file, nd, "cos");
+                    break;
+                case token_op_id::OP_TG:
+                    latex_print_mathfunc(file, nd, "tg");
+                    break;
+                case token_op_id::OP_CTG:
+                    latex_print_mathfunc(file, nd, "ctg");
+                    break;
+                case token_op_id::OP_LN:
+                    latex_print_mathfunc(file, nd, "ln");
                     break;
                 default:
+                    std::cout << "op_id: " << (int) nd->tk.op_id << std::endl;
                     throw std::runtime_error("Unknown operation token type during generating LaTeX file!");
             }
             break;
@@ -411,4 +619,6 @@ void expression::latex_print(FILE* file, node* nd) {
 expression::~expression() {
     if (tree_ != nullptr)
         delete tree_;
+
+    delete[] str_;
 }
