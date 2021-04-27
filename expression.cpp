@@ -4,6 +4,45 @@ using namespace se;
 
 node::node() : tk(), leftChild_ (nullptr), rightChild_ (nullptr) {}
 
+void node::swap(node& rhs) {
+    std::swap(leftChild_, rhs.leftChild_);
+    std::swap(rightChild_, rhs.rightChild_);
+    std::swap(tk, rhs.tk);
+}
+
+node::node(const node& rhs) : node() {
+    node tmp;
+
+    tmp.leftChild_ = rhs.leftChild_->copy();
+    tmp.rightChild_ = rhs.rightChild_->copy();
+    tmp.tk = rhs.tk;
+
+    swap(tmp);
+}
+
+node::node(node&& rhs) : node() {
+    node tmp;
+
+    tmp.leftChild_ = rhs.leftChild_;
+    tmp.rightChild_ = rhs.rightChild_;
+    tmp.tk = rhs.tk;
+
+    swap(tmp);
+}
+
+node& node::operator=(const node& rhs) {
+    node tmp(rhs);
+    swap(tmp);
+
+    return *this;
+}
+node& node::operator=(node&& rhs) {
+    node tmp(rhs);
+    swap(tmp); 
+
+    return *this;
+}
+
 node* node::get_node() {
     return new node;
 }
@@ -36,6 +75,45 @@ node* node::copy(node* nd) {
 }
 
 expression::expression() : str_ (new char[max_str_size]), tree_ (nullptr), exp_counter_ (0), simpled_ (false) {}
+
+void expression::swap(expression& rhs) noexcept {
+    std::swap(str_, rhs.str_);
+    std::swap(tree_, rhs.tree_);
+    std::swap(exp_counter_, rhs.exp_counter_);
+    std::swap(tokens_, rhs.tokens_);
+}
+
+expression::expression(const expression& rhs) {
+    expression tmp;
+
+    tmp.str_ = strcpy(tmp.str_, rhs.str_);
+    tmp.tree_ = rhs.tree_->copy();
+    tmp.tokens_ = vector<token>(rhs.tokens_);
+
+    swap(tmp);
+}
+
+expression::expression(expression&& rhs) {
+    expression tmp;
+
+    tmp.str_ = rhs.str_;
+    tmp.tree_ = rhs.tree_;
+    tmp.tokens_ = vector<token>(std::move(rhs.tokens_));
+
+    swap(tmp);
+}
+
+expression& expression::operator=(const expression& rhs) {
+    expression tmp(rhs);
+    swap(tmp);
+    return *this;
+}
+
+expression& expression::operator=(expression&& rhs) {
+    expression tmp(rhs);
+    swap(tmp);
+    return *this;
+}
 
 void expression::set_string(const char* input_str) {
     str_ = strcpy(str_, input_str);

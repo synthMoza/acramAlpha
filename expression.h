@@ -18,6 +18,13 @@ namespace se {
         node* rightChild_;
 
         node();
+        node(const node& rhs);
+        node(node&& rhs);
+        node& operator=(const node& rhs);
+        node& operator=(node&& rhs);
+
+        // Swap all members of these objects
+        void swap(node& rhs);
         // Set the value of this node to this token
         void set_token(const token& rhs);
         // Copy this tree
@@ -76,7 +83,13 @@ namespace se {
         bool simpled_;
     public:
         expression();
+        expression(const expression& rhs);
+        expression(expression&& rhs);
+        expression& operator=(const expression& rhs);
+        expression& operator=(expression&& rhs);
 
+        // Swap all members of these objects
+        void swap(expression& rhs) noexcept;
         // Set the expression string
         void set_string(const char* input_str);
         // Simplify the expression
